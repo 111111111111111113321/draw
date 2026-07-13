@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ColorBoard</title>
+<style>
+  body { font-family: sans-serif; background: #222; color: #eee; text-align: center; margin: 0; padding: 20px; }
+  h1 { margin-bottom: 10px; }
+  #authBox { max-width: 300px; margin: 60px auto; background: #333; padding: 20px; border-radius: 8px; }
+  #authBox input { width: 90%; padding: 8px; margin: 6px 0; }
+  #authBox button { width: 95%; padding: 8px; margin-top: 8px; cursor: pointer; }
+  #authError { color: #f66; min-height: 20px; }
+  #appBox { display: none; }
+  #topBar { display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 10px; }
+  canvas#wheel { border-radius: 50%; cursor: crosshair; }
+  canvas#board { background: #fff; border: 2px solid #555; cursor: crosshair; touch-action: none; }
+  #swatch { width: 30px; height: 30px; border: 2px solid #eee; display: inline-block; vertical-align: middle; }
+  button { border: none; border-radius: 4px; padding: 8px 14px; background: #4a90d9; color: #fff; }
+  button:hover { background: #3a7bc0; }
+  #status { font-size: 12px; color: #9c9; height: 16px; }
+</style>
+</head>
+<body>
+
+<h1>ColorBoard</h1>
+
+<div id="authBox">
+  <div id="authError"></div>
+  <input id="username" placeholder="Username" autocomplete="username">
+  <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+  <button onclick="login()">Log In</button>
+  <button onclick="register()">Register</button>
+</div>
+
+<div id="appBox">
+  <div id="topBar">
+    <span>Logged in as <b id="who"></b></span>
+    <canvas id="wheel" width="120" height="120"></canvas>
+    <span>Color: <span id="swatch"></span></span>
+    <span>Brush: <input id="brush" type="range" min="1" max="50" value="6"></span>
+    <button onclick="clearBoard()">Clear</button>
+    <button onclick="logout()">Log Out</button>
+  </div>
+  <div id="status"></div>
+  <canvas id="board" width="900" height="550"></canvas>
+</div>
+
+<script>
+let currentColor = '#000000';
+let brushSize = 6;
+let drawing = false;
+let lastX = 0, lastY = 0;
+
+const board = document.getElementById('board');
+const ctx = board.getContext('2d');
+const wheel = document.getElementById('wheel');
+const wctx = wheel.getContext('2d');
+const statusEl = document.getElementById('status');
+
+// ---------- auth ----------
+async function api(url, opts) {
+  const res = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+  return res.json().then(data => ({ ok: res.ok, data }));
+}
+
+async function register() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const { ok, data } = await api('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) });
+  if (!ok) return showAuthError(data.error);
+  enterApp(username);
+}
+
+async function login() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const { ok, data } = await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+  if (!ok) return showAuthError(data.error);
+  enterApp(username);
+}
+
+async function logout() {
+  await api('/api/logout', { method: 'POST' });
+  document.getElementById('appBox').style.display = 'none';
+  document.getElementById('authBox').style.display = 'block';
+}
+
+function showAuthError(msg) {
+  document.getElementById('authError').textContent = msg || 'Error';
+}
+
+async function enterApp(username) {
+  document.getElementById('who').textContent = username;
+  document.getElementById('authBox').style.display = 'none';
+  document.getElementById('appBox').style.display = 'block';
+  await loadDrawing();
+}
+
+async function checkSession() {
+  const { data } = await api('/api/me');
+  if (data.loggedIn) enterApp(data.username);
+}
+
+// ---------- drawing persistence ----------
+async function loadDrawing() {
+  const { data } = await api('/api/drawing');
+  ctx.clearRect(0, 0, board.width, board.height);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, board.width, board.height);
+  if (data.image) {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0);
+    img.src = data.image;
+  }
+}
+
+async function saveDrawing() {
+  statusEl.textContent = 'Saving...';
+  const image = board.toDataURL('image/png');
+  const { ok } = await api('/api/drawing', { method: 'POST', body: JSON.stringify({ image }) });
+  statusEl.textContent = ok ? 'Saved' : 'Save failed';
+  setTimeout(() => statusEl.textContent = '', 1200);
+}
+
+function clearBoard() {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, board.width, board.height);
+  saveDrawing();
+}
+
+// ---------- canvas drawing ----------
+function getPos(e) {
+  const rect = board.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+}
+
+function startDraw(e) {
+  drawing = true;
+  const p = getPos(e);
+  lastX = p.x; lastY = p.y;
+}
+
+function moveDraw(e) {
+  if (!drawing) return;
+  e.preventDefault();
+  const p = getPos(e);
+  ctx.strokeStyle = currentColor;
+  ctx.lineWidth = brushSize;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(lastX, lastY);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  lastX = p.x; lastY = p.y;
+}
+
+function endDraw() {
+  if (!drawing) return;
+  drawing = false;
+  saveDrawing();
+}
+
+board.addEventListener('mousedown', startDraw);
+board.addEventListener('mousemove', moveDraw);
+window.addEventListener('mouseup', endDraw);
+board.addEventListener('touchstart', startDraw);
+board.addEventListener('touchmove', moveDraw);
+board.addEventListener('touchend', endDraw);
+
+document.getElementById('brush').addEventListener('input', e => brushSize = Number(e.target.value));
+
+// ---------- color wheel ----------
+function drawWheel() {
+  const r = wheel.width / 2;
+  const img = wctx.createImageData(wheel.width, wheel.height);
+  for (let y = 0; y < wheel.height; y++) {
+    for (let x = 0; x < wheel.width; x++) {
+      const dx = x - r, dy = y - r;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const idx = (y * wheel.width + x) * 4;
+      if (dist <= r) {
+        let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (angle < 0) angle += 360;
+        const sat = Math.min(dist / r, 1);
+        const [rr, gg, bb] = hsvToRgb(angle, sat, 1);
+        img.data[idx] = rr; img.data[idx+1] = gg; img.data[idx+2] = bb; img.data[idx+3] = 255;
+      }
+    }
+  }
+  wctx.putImageData(img, 0, 0);
+}
+
+function hsvToRgb(h, s, v) {
+  const c = v * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = v - c;
+  let r=0, g=0, b=0;
+  if (h < 60) [r,g,b] = [c,x,0];
+  else if (h < 120) [r,g,b] = [x,c,0];
+  else if (h < 180) [r,g,b] = [0,c,x];
+  else if (h < 240) [r,g,b] = [0,x,c];
+  else if (h < 300) [r,g,b] = [x,0,c];
+  else [r,g,b] = [c,0,x];
+  return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
+}
+
+function pickColor(e) {
+  const rect = wheel.getBoundingClientRect();
+  const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+  const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+  const pixel = wctx.getImageData(x, y, 1, 1).data;
+  if (pixel[3] === 0) return; // outside wheel
+  currentColor = `rgb(${pixel[0]},${pixel[1]},${pixel[2]})`;
+  document.getElementById('swatch').style.background = currentColor;
+}
+
+wheel.addEventListener('mousedown', pickColor);
+wheel.addEventListener('touchstart', pickColor);
+
+drawWheel();
+document.getElementById('swatch').style.background = currentColor;
+checkSession();
+</script>
+</body>
+</html>
