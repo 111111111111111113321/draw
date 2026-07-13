@@ -6,68 +6,79 @@
 <title>AERO</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: sans-serif; background: #222; color: #eee; text-align: center; margin: 0; padding: 12px; }
-  h1 { margin: 6px 0 10px; font-size: 22px; }
-  #authBox { max-width: 300px; margin: 60px auto; background: #333; padding: 20px; border-radius: 8px; }
+  html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; background: #222; color: #eee; font-family: sans-serif; }
+
+  /* ---------- auth screen ---------- */
+  #authScreen { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  #authScreen h1 { margin: 0 0 16px; font-size: 26px; letter-spacing: 2px; }
+  #authBox { width: 90%; max-width: 300px; background: #333; padding: 20px; border-radius: 8px; }
   #authBox input { width: 90%; padding: 10px; margin: 6px 0; font-size: 16px; }
   #authBox button { width: 95%; padding: 10px; margin-top: 8px; cursor: pointer; font-size: 15px; }
-  #authError { color: #f66; min-height: 20px; }
-  #appBox { display: none; }
-  #topBar { display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-  #toolBar { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-  canvas#wheel { border-radius: 50%; cursor: crosshair; touch-action: none; }
-  #boardWrap {
-    width: 100%; max-width: 1000px; aspect-ratio: 1000 / 650;
-    margin: 0 auto; overflow: hidden; position: relative;
-    touch-action: none; border: 2px solid #555; background: #fff; border-radius: 4px;
+  #authError { color: #f66; min-height: 20px; font-size: 13px; }
+
+  /* ---------- app screen: single line bar on top, canvas fills the rest ---------- */
+  #appBox { display: none; position: fixed; inset: 0; flex-direction: column; }
+  #bar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px; background: #333; border-bottom: 1px solid #444;
+    overflow-x: auto; white-space: nowrap;
   }
-  canvas#board { width: 100%; height: 100%; display: block; touch-action: none; }
-  #swatch { width: 28px; height: 28px; border: 2px solid #eee; display: inline-block; vertical-align: middle; border-radius: 4px; }
-  button { border: none; border-radius: 6px; padding: 9px 14px; background: #4a90d9; color: #fff; font-size: 14px; cursor: pointer; min-height: 40px; }
-  button:hover { background: #3a7bc0; }
-  button.tool { min-width: 44px; }
-  button.active { background: #e6a817; color: #222; font-weight: bold; }
-  #status { font-size: 12px; color: #9c9; height: 16px; }
+  #bar > * { flex-shrink: 0; }
+  #brand { font-weight: bold; letter-spacing: 1px; font-size: 15px; margin-right: 4px; }
+  canvas#wheel { border-radius: 50%; cursor: crosshair; touch-action: none; vertical-align: middle; width: 34px; height: 34px; }
+  #swatch { width: 22px; height: 22px; border: 2px solid #eee; display: inline-block; vertical-align: middle; border-radius: 4px; }
   label { font-size: 13px; }
+  button { border: none; border-radius: 6px; padding: 8px 12px; background: #4a90d9; color: #fff; font-size: 13px; cursor: pointer; min-height: 36px; }
+  button:hover { background: #3a7bc0; }
+  button.tool { min-width: 40px; }
+  button.active { background: #e6a817; color: #222; font-weight: bold; }
+  #status { font-size: 12px; }
+  #status.online { color: #9c9; }
+  #status.offline { color: #f66; }
+  #who { color: #fff; }
+
+  #boardWrap { flex: 1 1 auto; min-height: 0; width: 100%; position: relative; overflow: hidden; background: #fff; }
+  canvas#board { display: block; touch-action: none; cursor: crosshair; }
+
   @media (max-width: 480px) {
-    h1 { font-size: 18px; }
-    button { padding: 8px 10px; font-size: 13px; }
-    canvas#wheel { width: 90px; height: 90px; }
+    #bar { gap: 6px; padding: 5px 8px; }
+    button { padding: 7px 9px; font-size: 12px; min-height: 32px; }
+    canvas#wheel { width: 28px; height: 28px; }
   }
 </style>
 </head>
 <body>
 
-<h1>AERO</h1>
-
-<div id="authBox">
-  <div id="authError"></div>
-  <input id="username" placeholder="Имя пользователя" autocomplete="username">
-  <input id="password" type="password" placeholder="Пароль" autocomplete="current-password">
-  <button onclick="login()">Войти</button>
-  <button onclick="register()">Зарегистрироваться</button>
+<div id="authScreen">
+  <h1>AERO</h1>
+  <div id="authBox">
+    <div id="authError"></div>
+    <input id="username" placeholder="Имя пользователя" autocomplete="username">
+    <input id="password" type="password" placeholder="Пароль" autocomplete="current-password">
+    <button onclick="login()">Войти</button>
+    <button onclick="register()">Зарегистрироваться</button>
+  </div>
 </div>
 
 <div id="appBox">
-  <div id="topBar">
-    <span>Вы вошли как <b id="who"></b></span>
+  <div id="bar">
+    <span id="brand">AERO</span>
+    <span id="status" class="offline">Подключение...</span>
+    <span>Вы: <b id="who"></b></span>
     <canvas id="wheel" width="120" height="120"></canvas>
-    <span>Цвет: <span id="swatch"></span></span>
-    <span><label>Кисть: <input id="brush" type="range" min="1" max="50" value="6"></label></span>
+    <span id="swatch"></span>
+    <label>Кисть <input id="brush" type="range" min="1" max="50" value="6"></label>
+    <button class="tool active" id="tool-pen" onclick="selectTool('pen')" title="Кисть">🖊</button>
+    <button class="tool" id="tool-eraser" onclick="selectTool('eraser')" title="Ластик">🧽</button>
+    <button class="tool" id="tool-move" onclick="selectTool('move')" title="Перемещение">✋</button>
+    <button onclick="zoomOutBtn()" title="Уменьшить">➖</button>
+    <button onclick="zoomInBtn()" title="Увеличить">➕</button>
+    <button onclick="zoomReset()" title="Сбросить вид">⟳</button>
+    <button onclick="clearBoard()">🗑 Очистить</button>
     <button onclick="logout()">Выйти</button>
   </div>
-  <div id="toolBar">
-    <button class="tool active" id="tool-pen" onclick="selectTool('pen')" title="Кисть">🖊 Кисть</button>
-    <button class="tool" id="tool-eraser" onclick="selectTool('eraser')" title="Ластик">🧽 Ластик</button>
-    <button class="tool" id="tool-move" onclick="selectTool('move')" title="Перемещение">✋ Курсор</button>
-    <button onclick="zoomOut()" title="Уменьшить">➖</button>
-    <button onclick="zoomIn()" title="Увеличить">➕</button>
-    <button onclick="zoomReset()" title="Сбросить масштаб">⟳ 100%</button>
-    <button onclick="clearBoard()">🗑 Очистить</button>
-  </div>
-  <div id="status"></div>
   <div id="boardWrap">
-    <canvas id="board" width="1000" height="650"></canvas>
+    <canvas id="board"></canvas>
   </div>
 </div>
 
@@ -106,9 +117,10 @@ async function login() {
 }
 
 async function logout() {
+  if (ws) ws.close();
   await api('/api/logout', { method: 'POST' });
   document.getElementById('appBox').style.display = 'none';
-  document.getElementById('authBox').style.display = 'block';
+  document.getElementById('authScreen').style.display = 'flex';
 }
 
 function showAuthError(msg) {
@@ -117,9 +129,10 @@ function showAuthError(msg) {
 
 async function enterApp(username) {
   document.getElementById('who').textContent = username;
-  document.getElementById('authBox').style.display = 'none';
-  document.getElementById('appBox').style.display = 'block';
-  await loadDrawing();
+  document.getElementById('authScreen').style.display = 'none';
+  document.getElementById('appBox').style.display = 'flex';
+  resizeCanvas();
+  connectWS();
 }
 
 async function checkSession() {
@@ -127,32 +140,54 @@ async function checkSession() {
   if (data.loggedIn) enterApp(data.username);
 }
 
-// ---------- сохранение рисунка ----------
-async function loadDrawing() {
-  const { data } = await api('/api/drawing');
-  ctx.clearRect(0, 0, board.width, board.height);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, board.width, board.height);
-  if (data.image) {
-    const img = new Image();
-    img.onload = () => ctx.drawImage(img, 0, 0);
-    img.src = data.image;
+// ---------- realtime общий бесконечный холст ----------
+let strokes = [];
+let ws = null;
+let reconnectTimer = null;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+
+  ws.onopen = () => {
+    statusEl.textContent = '🟢 В сети';
+    statusEl.className = 'online';
+  };
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'history') {
+      strokes = msg.strokes;
+      redraw();
+    } else if (msg.type === 'stroke') {
+      strokes.push(msg);
+      drawStroke(msg);
+    } else if (msg.type === 'clear') {
+      strokes = [];
+      redraw();
+    }
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = '🔴 Переподключение...';
+    statusEl.className = 'offline';
+    reconnectTimer = setTimeout(connectWS, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function sendStroke(s) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'stroke', x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, color: s.color, size: s.size, tool: s.tool }));
   }
 }
 
-async function saveDrawing() {
-  statusEl.textContent = 'Сохранение...';
-  const image = board.toDataURL('image/png');
-  const { ok } = await api('/api/drawing', { method: 'POST', body: JSON.stringify({ image }) });
-  statusEl.textContent = ok ? 'Сохранено' : 'Ошибка сохранения';
-  setTimeout(() => statusEl.textContent = '', 1200);
-}
-
 function clearBoard() {
-  ctx.clearRect(0, 0, board.width, board.height);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, board.width, board.height);
-  saveDrawing();
+  if (!confirm('Очистить общий холст для всех?')) return;
+  strokes = [];
+  redraw();
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'clear' }));
 }
 
 // ---------- инструменты ----------
@@ -160,25 +195,71 @@ function selectTool(t) {
   tool = t;
   document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
   document.getElementById('tool-' + t).classList.add('active');
-  boardWrap.style.cursor = t === 'move' ? 'grab' : 'crosshair';
+  board.style.cursor = t === 'move' ? 'grab' : 'crosshair';
 }
 
-// ---------- масштаб и перемещение (панорама) ----------
+// ---------- бесконечный холст: масштаб (zoom) и панорама (pan) ----------
 let zoom = 1, panX = 0, panY = 0;
+let panInitialized = false;
 
-function updateTransform() {
-  board.style.transformOrigin = '0 0';
-  board.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+function resizeCanvas() {
+  const rect = boardWrap.getBoundingClientRect();
+  board.width = rect.width;
+  board.height = rect.height;
+  if (!panInitialized) {
+    panX = board.width / 2;
+    panY = board.height / 2;
+    panInitialized = true;
+  }
+  redraw();
+}
+window.addEventListener('resize', () => { if (boardWrap.clientWidth) resizeCanvas(); });
+
+function screenToWorld(clientX, clientY) {
+  const rect = board.getBoundingClientRect();
+  return { x: (clientX - rect.left - panX) / zoom, y: (clientY - rect.top - panY) / zoom };
 }
 
-function zoomIn() { zoom = Math.min(4, zoom * 1.25); updateTransform(); }
-function zoomOut() { zoom = Math.max(0.5, zoom / 1.25); updateTransform(); }
-function zoomReset() { zoom = 1; panX = 0; panY = 0; updateTransform(); }
+function applyTransform() {
+  ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
+}
+
+function drawStroke(s) {
+  applyTransform();
+  ctx.globalCompositeOperation = s.tool === 'eraser' ? 'destination-out' : 'source-over';
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = s.size;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(s.x1, s.y1);
+  ctx.lineTo(s.x2, s.y2);
+  ctx.stroke();
+}
+
+function redraw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, board.width, board.height);
+  strokes.forEach(drawStroke);
+}
+
+function zoomAt(screenX, screenY, factor) {
+  const worldPt = screenToWorld(screenX, screenY);
+  zoom = Math.max(0.1, Math.min(8, zoom * factor));
+  const rect = board.getBoundingClientRect();
+  panX = (screenX - rect.left) - worldPt.x * zoom;
+  panY = (screenY - rect.top) - worldPt.y * zoom;
+  redraw();
+}
+
+function zoomInBtn() { const r = boardWrap.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.25); }
+function zoomOutBtn() { const r = boardWrap.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 0.8); }
+function zoomReset() { zoom = 1; panX = board.width / 2; panY = board.height / 2; redraw(); }
 
 boardWrap.addEventListener('wheel', e => {
   e.preventDefault();
-  zoom = Math.max(0.5, Math.min(4, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
-  updateTransform();
+  zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.1 : 0.9);
 }, { passive: false });
 
 // ---------- рисование / ластик / панорама через Pointer Events ----------
@@ -186,27 +267,10 @@ const activePointers = new Map();
 let isDrawing = false, isPanning = false, isPinching = false;
 let lastX = 0, lastY = 0;
 let panStart = { x: 0, y: 0 }, panOrigin = { x: 0, y: 0 };
-let pinchStartDist = 0, pinchStartZoom = 1;
-
-function getCanvasPos(clientX, clientY) {
-  const rect = board.getBoundingClientRect();
-  const scaleX = board.width / rect.width;
-  const scaleY = board.height / rect.height;
-  return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
-}
+let pinchStartDist = 0, pinchStartZoom = 1, pinchWorldMid = { x: 0, y: 0 };
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-
-function drawSegment(x1, y1, x2, y2) {
-  ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
-  ctx.strokeStyle = currentColor;
-  ctx.lineWidth = brushSize;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-}
+function midpoint(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
 
 board.addEventListener('pointerdown', e => {
   board.setPointerCapture(e.pointerId);
@@ -219,17 +283,21 @@ board.addEventListener('pointerdown', e => {
     const pts = [...activePointers.values()];
     pinchStartDist = dist(pts[0], pts[1]);
     pinchStartZoom = zoom;
+    pinchWorldMid = screenToWorld(midpoint(pts[0], pts[1]).x, midpoint(pts[0], pts[1]).y);
   } else if (activePointers.size === 1) {
     if (tool === 'move') {
       isPanning = true;
-      boardWrap.style.cursor = 'grabbing';
+      board.style.cursor = 'grabbing';
       panStart = { x: e.clientX, y: e.clientY };
       panOrigin = { x: panX, y: panY };
     } else {
       isDrawing = true;
-      const p = getCanvasPos(e.clientX, e.clientY);
+      const p = screenToWorld(e.clientX, e.clientY);
       lastX = p.x; lastY = p.y;
-      drawSegment(p.x, p.y, p.x + 0.01, p.y + 0.01); // draw a dot on tap
+      const s = { x1: p.x, y1: p.y, x2: p.x + 0.01, y2: p.y + 0.01, color: currentColor, size: brushSize, tool };
+      strokes.push(s);
+      drawStroke(s);
+      sendStroke(s);
     }
   }
 });
@@ -241,19 +309,26 @@ board.addEventListener('pointermove', e => {
   if (isPinching && activePointers.size === 2) {
     const pts = [...activePointers.values()];
     const d = dist(pts[0], pts[1]);
-    zoom = Math.max(0.5, Math.min(4, pinchStartZoom * (d / pinchStartDist)));
-    updateTransform();
+    const mid = midpoint(pts[0], pts[1]);
+    zoom = Math.max(0.1, Math.min(8, pinchStartZoom * (d / pinchStartDist)));
+    const rect = board.getBoundingClientRect();
+    panX = (mid.x - rect.left) - pinchWorldMid.x * zoom;
+    panY = (mid.y - rect.top) - pinchWorldMid.y * zoom;
+    redraw();
     return;
   }
   if (isPanning) {
     panX = panOrigin.x + (e.clientX - panStart.x);
     panY = panOrigin.y + (e.clientY - panStart.y);
-    updateTransform();
+    redraw();
     return;
   }
   if (isDrawing) {
-    const p = getCanvasPos(e.clientX, e.clientY);
-    drawSegment(lastX, lastY, p.x, p.y);
+    const p = screenToWorld(e.clientX, e.clientY);
+    const s = { x1: lastX, y1: lastY, x2: p.x, y2: p.y, color: currentColor, size: brushSize, tool };
+    strokes.push(s);
+    drawStroke(s);
+    sendStroke(s);
     lastX = p.x; lastY = p.y;
   }
 });
@@ -262,13 +337,12 @@ function endPointer(e) {
   activePointers.delete(e.pointerId);
   if (activePointers.size < 2) isPinching = false;
   if (activePointers.size === 0) {
-    if (isDrawing) { isDrawing = false; saveDrawing(); }
-    if (isPanning) { isPanning = false; boardWrap.style.cursor = tool === 'move' ? 'grab' : 'crosshair'; }
+    isDrawing = false;
+    if (isPanning) { isPanning = false; board.style.cursor = tool === 'move' ? 'grab' : 'crosshair'; }
   }
 }
 board.addEventListener('pointerup', endPointer);
 board.addEventListener('pointercancel', endPointer);
-board.addEventListener('pointerleave', e => { if (activePointers.size === 0) return; });
 
 document.getElementById('brush').addEventListener('input', e => brushSize = Number(e.target.value));
 
@@ -315,7 +389,7 @@ function pickColor(clientX, clientY) {
   if (pixel[3] === 0) return; // за пределами колеса
   currentColor = `rgb(${pixel[0]},${pixel[1]},${pixel[2]})`;
   document.getElementById('swatch').style.background = currentColor;
-  if (tool === 'eraser') selectTool('pen'); // picking a color implies you want to draw with it
+  if (tool === 'eraser') selectTool('pen');
 }
 
 wheel.addEventListener('pointerdown', e => pickColor(e.clientX, e.clientY));
