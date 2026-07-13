@@ -74,7 +74,7 @@ app.post('/api/register', async (req, res) => {
     );
     req.session.userId = result.rows[0].id;
     req.session.username = username;
-    res.json({ ok: true, username });
+    res.json({ ok: true, username, id: req.session.userId });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Это имя пользователя уже занято' });
     console.error(err);
@@ -92,7 +92,7 @@ app.post('/api/login', async (req, res) => {
     if (!match) return res.status(401).json({ error: 'Неверные учётные данные' });
     req.session.userId = user.id;
     req.session.username = username;
-    res.json({ ok: true, username });
+    res.json({ ok: true, username, id: user.id });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -105,7 +105,7 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   if (!req.session.userId) return res.json({ loggedIn: false });
-  res.json({ loggedIn: true, username: req.session.username });
+  res.json({ loggedIn: true, username: req.session.username, id: req.session.userId });
 });
 
 // ---------- realtime shared canvas over WebSocket ----------
@@ -128,6 +128,42 @@ server.on('upgrade', (req, socket, head) => {
     });
   });
 });
+
+// ---------- ownership: nobody may draw or erase over territory someone else already drew on ----------
+// The infinite canvas is divided into a grid. The first PEN stroke to touch a cell claims it
+// for that user. From then on, only that user may draw or erase in that cell. Erasing never
+// claims new territory itself - it can only act on cells you already own or that are still empty.
+const CELL_SIZE = 40;
+const cellOwners = new Map(); // "cx,cy" -> user_id
+
+function cellKey(cx, cy) { return cx + ',' + cy; }
+
+function cellsForSegment(x1, y1, x2, y2) {
+  const pts = [[x1, y1], [x2, y2], [(x1 + x2) / 2, (y1 + y2) / 2]];
+  const cells = new Set();
+  for (const [x, y] of pts) cells.add(cellKey(Math.floor(x / CELL_SIZE), Math.floor(y / CELL_SIZE)));
+  return [...cells];
+}
+
+function canClaim(cells, userId) {
+  for (const c of cells) {
+    const owner = cellOwners.get(c);
+    if (owner !== undefined && owner !== userId) return false;
+  }
+  return true;
+}
+
+function claimCells(cells, userId) {
+  for (const c of cells) if (!cellOwners.has(c)) cellOwners.set(c, userId);
+}
+
+async function rebuildCellOwnership() {
+  const result = await pool.query('SELECT x1, y1, x2, y2, tool, user_id FROM strokes ORDER BY id ASC');
+  for (const row of result.rows) {
+    if (row.tool === 'eraser') continue; // erasing never claims territory
+    claimCells(cellsForSegment(row.x1, row.y1, row.x2, row.y2), row.user_id);
+  }
+}
 
 function isValidStroke(s) {
   const nums = [s.x1, s.y1, s.x2, s.y2, s.size];
@@ -160,6 +196,13 @@ wss.on('connection', async ws => {
     try { msg = JSON.parse(raw); } catch { return; }
 
     if (msg.type === 'stroke' && isValidStroke(msg)) {
+      const cells = cellsForSegment(msg.x1, msg.y1, msg.x2, msg.y2);
+      if (!canClaim(cells, ws.userId)) {
+        ws.send(JSON.stringify({ type: 'rejected' }));
+        return;
+      }
+      // Claim synchronously, before any await, so two near-simultaneous strokes can't both pass the check.
+      if (msg.tool !== 'eraser') claimCells(cells, ws.userId);
       try {
         const result = await pool.query(
           `INSERT INTO strokes (user_id, x1, y1, x2, y2, color, size, tool)
@@ -177,6 +220,7 @@ wss.on('connection', async ws => {
     } else if (msg.type === 'clear') {
       try {
         await pool.query('DELETE FROM strokes');
+        cellOwners.clear();
         broadcast({ type: 'clear' }, ws);
       } catch (err) {
         console.error('Failed to clear canvas:', err);
@@ -186,6 +230,7 @@ wss.on('connection', async ws => {
 });
 
 initDb()
+  .then(rebuildCellOwnership)
   .then(() => server.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`)))
   .catch(err => {
     console.error('Failed to initialize database:', err);
