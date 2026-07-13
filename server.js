@@ -1,9 +1,11 @@
-// server.js - simple auth + PostgreSQL-backed drawing board
+// server.js - auth + realtime shared infinite canvas (PostgreSQL + WebSocket)
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const path = require('path');
+const http = require('http');
+const WebSocket = require('ws');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,25 +23,35 @@ async function initDb() {
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
+  // Every user draws on the SAME shared canvas now. Each stroke is a single
+  // line segment in world coordinates (the canvas has no bounds).
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS drawings (
-      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      image_data TEXT,
-      updated_at TIMESTAMP DEFAULT NOW()
+    CREATE TABLE IF NOT EXISTS strokes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      x1 DOUBLE PRECISION NOT NULL,
+      y1 DOUBLE PRECISION NOT NULL,
+      x2 DOUBLE PRECISION NOT NULL,
+      y2 DOUBLE PRECISION NOT NULL,
+      color TEXT NOT NULL,
+      size REAL NOT NULL,
+      tool TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
     );
   `);
 }
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(__dirname, { index: false }));
-app.use(session({
+
+const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'change-this-secret-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 1000 * 60 * 60 * 24 * 7, httpOnly: true, sameSite: 'lax' }
-}));
+});
+app.use(sessionMiddleware);
 
-// --- Auth middleware: every drawing route relies on this, never on client-supplied ids ---
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Требуется вход в систему' });
   next();
@@ -96,28 +108,85 @@ app.get('/api/me', (req, res) => {
   res.json({ loggedIn: true, username: req.session.username });
 });
 
-// Loads ONLY the logged-in user's own drawing - userId comes from the server session
-app.get('/api/drawing', requireAuth, async (req, res) => {
-  const result = await pool.query('SELECT image_data FROM drawings WHERE user_id = $1', [req.session.userId]);
-  res.json({ image: result.rows[0]?.image_data || null });
+// ---------- realtime shared canvas over WebSocket ----------
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ noServer: true });
+
+// Reuse the same express session on the WebSocket handshake so only logged-in
+// users can open a socket and draw. The userId always comes from the session,
+// never from anything the client sends.
+server.on('upgrade', (req, socket, head) => {
+  sessionMiddleware(req, {}, () => {
+    if (!req.session || !req.session.userId) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, ws => {
+      ws.userId = req.session.userId;
+      wss.emit('connection', ws, req);
+    });
+  });
 });
 
-// Saves ONLY to the logged-in user's own row - a user can never write to someone else's drawing
-app.post('/api/drawing', requireAuth, async (req, res) => {
-  const { image } = req.body || {};
-  if (typeof image !== 'string' || !image.startsWith('data:image/png;base64,')) {
-    return res.status(400).json({ error: 'Некорректные данные изображения' });
+function isValidStroke(s) {
+  const nums = [s.x1, s.y1, s.x2, s.y2, s.size];
+  if (nums.some(n => typeof n !== 'number' || !isFinite(n))) return false;
+  if (s.size <= 0 || s.size > 300) return false;
+  if (s.tool !== 'pen' && s.tool !== 'eraser') return false;
+  if (typeof s.color !== 'string' || !/^(#[0-9a-fA-F]{6}|rgb\(\d{1,3},\d{1,3},\d{1,3}\))$/.test(s.color)) return false;
+  return true;
+}
+
+function broadcast(obj, exceptWs) {
+  const data = JSON.stringify(obj);
+  wss.clients.forEach(client => {
+    if (client !== exceptWs && client.readyState === WebSocket.OPEN) client.send(data);
+  });
+}
+
+wss.on('connection', async ws => {
+  try {
+    const result = await pool.query(
+      'SELECT id, x1, y1, x2, y2, color, size, tool, user_id FROM strokes ORDER BY id ASC'
+    );
+    ws.send(JSON.stringify({ type: 'history', strokes: result.rows }));
+  } catch (err) {
+    console.error('Failed to load history:', err);
   }
-  await pool.query(
-    `INSERT INTO drawings (user_id, image_data, updated_at) VALUES ($1, $2, NOW())
-     ON CONFLICT (user_id) DO UPDATE SET image_data = $2, updated_at = NOW()`,
-    [req.session.userId, image]
-  );
-  res.json({ ok: true });
+
+  ws.on('message', async raw => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+
+    if (msg.type === 'stroke' && isValidStroke(msg)) {
+      try {
+        const result = await pool.query(
+          `INSERT INTO strokes (user_id, x1, y1, x2, y2, color, size, tool)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [ws.userId, msg.x1, msg.y1, msg.x2, msg.y2, msg.color, msg.size, msg.tool]
+        );
+        broadcast({
+          type: 'stroke', id: result.rows[0].id,
+          x1: msg.x1, y1: msg.y1, x2: msg.x2, y2: msg.y2,
+          color: msg.color, size: msg.size, tool: msg.tool, user_id: ws.userId
+        }, ws);
+      } catch (err) {
+        console.error('Failed to save stroke:', err);
+      }
+    } else if (msg.type === 'clear') {
+      try {
+        await pool.query('DELETE FROM strokes');
+        broadcast({ type: 'clear' }, ws);
+      } catch (err) {
+        console.error('Failed to clear canvas:', err);
+      }
+    }
+  });
 });
 
 initDb()
-  .then(() => app.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`)))
+  .then(() => server.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`)))
   .catch(err => {
     console.error('Failed to initialize database:', err);
     process.exit(1);
