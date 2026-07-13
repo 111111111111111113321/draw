@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/colorboard'
+  connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/aero'
 });
 
 async function initDb() {
@@ -41,7 +41,7 @@ app.use(session({
 
 // --- Auth middleware: every drawing route relies on this, never on client-supplied ids ---
 function requireAuth(req, res, next) {
-  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
+  if (!req.session.userId) return res.status(401).json({ error: 'Требуется вход в систему' });
   next();
 }
 
@@ -52,7 +52,7 @@ app.get('/', (req, res) => {
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password || username.length < 3 || password.length < 6) {
-    return res.status(400).json({ error: 'Username min 3 chars, password min 6 chars' });
+    return res.status(400).json({ error: 'Имя пользователя минимум 3 символа, пароль минимум 6 символов' });
   }
   try {
     const hash = await bcrypt.hash(password, 10);
@@ -64,9 +64,9 @@ app.post('/api/register', async (req, res) => {
     req.session.username = username;
     res.json({ ok: true, username });
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Username already taken' });
+    if (err.code === '23505') return res.status(409).json({ error: 'Это имя пользователя уже занято' });
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
@@ -74,16 +74,16 @@ app.post('/api/login', async (req, res) => {
   const { username, password } = req.body || {};
   try {
     const result = await pool.query('SELECT id, password_hash FROM users WHERE username = $1', [username]);
-    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Неверные учётные данные' });
     const user = result.rows[0];
     const match = await bcrypt.compare(password || '', user.password_hash);
-    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!match) return res.status(401).json({ error: 'Неверные учётные данные' });
     req.session.userId = user.id;
     req.session.username = username;
     res.json({ ok: true, username });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
@@ -106,7 +106,7 @@ app.get('/api/drawing', requireAuth, async (req, res) => {
 app.post('/api/drawing', requireAuth, async (req, res) => {
   const { image } = req.body || {};
   if (typeof image !== 'string' || !image.startsWith('data:image/png;base64,')) {
-    return res.status(400).json({ error: 'Invalid image data' });
+    return res.status(400).json({ error: 'Некорректные данные изображения' });
   }
   await pool.query(
     `INSERT INTO drawings (user_id, image_data, updated_at) VALUES ($1, $2, NOW())
