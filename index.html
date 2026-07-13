@@ -27,7 +27,7 @@
   #bar::-webkit-scrollbar { display: none; }
   #bar > * { flex-shrink: 0; }
   #brand { font-weight: bold; letter-spacing: 1px; font-size: 15px; margin-right: 4px; }
-  canvas#wheel { border-radius: 50%; cursor: crosshair; touch-action: none; vertical-align: middle; width: 34px; height: 34px; }
+  canvas#wheel { border-radius: 50%; cursor: crosshair; touch-action: none; vertical-align: middle; width: 48px; height: 48px; }
   #swatch { width: 22px; height: 22px; border: 2px solid #eee; display: inline-block; vertical-align: middle; border-radius: 4px; }
   label { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
   #brush { vertical-align: middle; }
@@ -53,7 +53,7 @@
     #status.offline { background: #f66; }
     button { padding: 9px 10px; font-size: 14px; min-height: 40px; min-width: 40px; border-radius: 8px; }
     button.tool { min-width: 44px; }
-    canvas#wheel { width: 36px; height: 36px; }
+    canvas#wheel { width: 60px; height: 60px; }
     #swatch { width: 26px; height: 26px; }
     #brush { width: 70px; }
     label span { display: none; }
@@ -63,6 +63,38 @@
     #bar { gap: 4px; padding: 5px 4px; }
     button { padding: 8px; font-size: 13px; min-width: 38px; min-height: 38px; }
     #brush { width: 50px; }
+  }
+
+  /* ---------- big slide-down color drawer (phones) ---------- */
+  #colorBackdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+    z-index: 90;
+  }
+  #colorDrawer {
+    position: fixed; left: 0; right: 0; top: 0;
+    background: #333; border-radius: 0 0 18px 18px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 10px 20px 24px;
+    transform: translateY(-100%);
+    transition: transform .3s ease;
+    z-index: 91;
+  }
+  #colorDrawerHandle {
+    width: 40px; height: 5px; background: #666; border-radius: 3px;
+    margin-bottom: 14px; cursor: pointer;
+  }
+  #colorDrawer.open { transform: translateY(0); }
+  #colorBackdrop.open { opacity: 1; pointer-events: auto; }
+  #wheelBig {
+    width: min(78vw, 300px); height: min(78vw, 300px);
+    border-radius: 50%; touch-action: none; cursor: crosshair;
+    box-shadow: 0 0 0 4px #222, 0 4px 16px rgba(0,0,0,0.5);
+  }
+  #colorDrawerSwatch {
+    width: 44px; height: 44px; border-radius: 10px; margin-top: 16px;
+    border: 3px solid #eee;
   }
 </style>
 </head>
@@ -97,6 +129,12 @@
   </div>
   <div id="boardWrap">
     <canvas id="board"></canvas>
+  </div>
+  <div id="colorBackdrop" onclick="closeColorDrawer()"></div>
+  <div id="colorDrawer">
+    <div id="colorDrawerHandle"></div>
+    <canvas id="wheelBig" width="260" height="260"></canvas>
+    <div id="colorDrawerSwatch"></div>
   </div>
 </div>
 
@@ -425,14 +463,19 @@ board.addEventListener('pointercancel', endPointer);
 document.getElementById('brush').addEventListener('input', e => brushSize = Number(e.target.value));
 
 // ---------- цветовое колесо ----------
-function drawWheel() {
-  const r = wheel.width / 2;
-  const img = wctx.createImageData(wheel.width, wheel.height);
-  for (let y = 0; y < wheel.height; y++) {
-    for (let x = 0; x < wheel.width; x++) {
+const wheelBig = document.getElementById('wheelBig');
+const wbctx = wheelBig.getContext('2d');
+
+function isMobile() { return window.matchMedia('(max-width: 600px)').matches; }
+
+function drawWheelOn(canvas, cctx) {
+  const r = canvas.width / 2;
+  const img = cctx.createImageData(canvas.width, canvas.height);
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
       const dx = x - r, dy = y - r;
       const distC = Math.sqrt(dx * dx + dy * dy);
-      const idx = (y * wheel.width + x) * 4;
+      const idx = (y * canvas.width + x) * 4;
       if (distC <= r) {
         let angle = Math.atan2(dy, dx) * 180 / Math.PI;
         if (angle < 0) angle += 360;
@@ -442,8 +485,10 @@ function drawWheel() {
       }
     }
   }
-  wctx.putImageData(img, 0, 0);
+  cctx.putImageData(img, 0, 0);
 }
+
+function drawWheel() { drawWheelOn(wheel, wctx); }
 
 function hsvToRgb(h, s, v) {
   const c = v * s;
@@ -459,22 +504,46 @@ function hsvToRgb(h, s, v) {
   return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
 }
 
-function pickColor(clientX, clientY) {
-  const rect = wheel.getBoundingClientRect();
-  const x = (clientX - rect.left) * (wheel.width / rect.width);
-  const y = (clientY - rect.top) * (wheel.height / rect.height);
-  const pixel = wctx.getImageData(x, y, 1, 1).data;
+function pickColor(canvas, cctx, clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (clientX - rect.left) * (canvas.width / rect.width);
+  const y = (clientY - rect.top) * (canvas.height / rect.height);
+  const pixel = cctx.getImageData(x, y, 1, 1).data;
   if (pixel[3] === 0) return; // за пределами колеса
   currentColor = `rgb(${pixel[0]},${pixel[1]},${pixel[2]})`;
   document.getElementById('swatch').style.background = currentColor;
+  document.getElementById('colorDrawerSwatch').style.background = currentColor;
   if (tool === 'eraser') selectTool('pen');
 }
 
-wheel.addEventListener('pointerdown', e => pickColor(e.clientX, e.clientY));
-wheel.addEventListener('pointermove', e => { if (e.buttons === 1) pickColor(e.clientX, e.clientY); });
+const colorDrawer = document.getElementById('colorDrawer');
+const colorBackdrop = document.getElementById('colorBackdrop');
+
+function openColorDrawer() {
+  colorDrawer.classList.add('open');
+  colorBackdrop.classList.add('open');
+}
+function closeColorDrawer() {
+  colorDrawer.classList.remove('open');
+  colorBackdrop.classList.remove('open');
+}
+
+wheel.addEventListener('pointerdown', e => {
+  if (isMobile()) { openColorDrawer(); return; }
+  pickColor(wheel, wctx, e.clientX, e.clientY);
+});
+wheel.addEventListener('pointermove', e => { if (!isMobile() && e.buttons === 1) pickColor(wheel, wctx, e.clientX, e.clientY); });
+
+document.getElementById('swatch').addEventListener('click', () => { if (isMobile()) openColorDrawer(); });
+
+wheelBig.addEventListener('pointerdown', e => pickColor(wheelBig, wbctx, e.clientX, e.clientY));
+wheelBig.addEventListener('pointermove', e => { if (e.buttons === 1) pickColor(wheelBig, wbctx, e.clientX, e.clientY); });
+document.getElementById('colorDrawerHandle').addEventListener('click', closeColorDrawer);
 
 drawWheel();
+drawWheelOn(wheelBig, wbctx);
 document.getElementById('swatch').style.background = currentColor;
+document.getElementById('colorDrawerSwatch').style.background = currentColor;
 checkSession();
 </script>
 </body>
