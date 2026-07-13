@@ -22,12 +22,15 @@
     flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
     padding: 6px 10px; background: #333; border-bottom: 1px solid #444;
     overflow-x: auto; white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
   }
+  #bar::-webkit-scrollbar { display: none; }
   #bar > * { flex-shrink: 0; }
   #brand { font-weight: bold; letter-spacing: 1px; font-size: 15px; margin-right: 4px; }
   canvas#wheel { border-radius: 50%; cursor: crosshair; touch-action: none; vertical-align: middle; width: 34px; height: 34px; }
   #swatch { width: 22px; height: 22px; border: 2px solid #eee; display: inline-block; vertical-align: middle; border-radius: 4px; }
-  label { font-size: 13px; }
+  label { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+  #brush { vertical-align: middle; }
   button { border: none; border-radius: 6px; padding: 8px 12px; background: #4a90d9; color: #fff; font-size: 13px; cursor: pointer; min-height: 36px; }
   button:hover { background: #3a7bc0; }
   button.tool { min-width: 40px; }
@@ -40,10 +43,26 @@
   #boardWrap { flex: 1 1 auto; min-height: 0; width: 100%; position: relative; overflow: hidden; background: #fff; }
   canvas#board { display: block; touch-action: none; cursor: crosshair; }
 
-  @media (max-width: 480px) {
-    #bar { gap: 6px; padding: 5px 8px; }
-    button { padding: 7px 9px; font-size: 12px; min-height: 32px; }
-    canvas#wheel { width: 28px; height: 28px; }
+  /* ---------- phone optimizations ---------- */
+  @media (max-width: 600px) {
+    #bar { gap: 6px; padding: 6px; }
+    #brand { display: none; }
+    #whoWrap { display: none; }
+    #status { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; }
+    #status.online { background: #4caf50; }
+    #status.offline { background: #f66; }
+    button { padding: 9px 10px; font-size: 14px; min-height: 40px; min-width: 40px; border-radius: 8px; }
+    button.tool { min-width: 44px; }
+    canvas#wheel { width: 36px; height: 36px; }
+    #swatch { width: 26px; height: 26px; }
+    #brush { width: 70px; }
+    label span { display: none; }
+  }
+
+  @media (max-width: 380px) {
+    #bar { gap: 4px; padding: 5px 4px; }
+    button { padding: 8px; font-size: 13px; min-width: 38px; min-height: 38px; }
+    #brush { width: 50px; }
   }
 </style>
 </head>
@@ -64,10 +83,10 @@
   <div id="bar">
     <span id="brand">AERO</span>
     <span id="status" class="offline">Подключение...</span>
-    <span>Вы: <b id="who"></b></span>
+    <span id="whoWrap">Вы: <b id="who"></b></span>
     <canvas id="wheel" width="120" height="120"></canvas>
     <span id="swatch"></span>
-    <label>Кисть <input id="brush" type="range" min="1" max="50" value="6"></label>
+    <label><span>Кисть</span> <input id="brush" type="range" min="1" max="50" value="6"></label>
     <button class="tool active" id="tool-pen" onclick="selectTool('pen')" title="Кисть">🖊</button>
     <button class="tool" id="tool-eraser" onclick="selectTool('eraser')" title="Ластик">🧽</button>
     <button class="tool" id="tool-move" onclick="selectTool('move')" title="Перемещение">✋</button>
