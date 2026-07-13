@@ -1,63 +1,89 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>ColorBoard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>AERO</title>
 <style>
-  body { font-family: sans-serif; background: #222; color: #eee; text-align: center; margin: 0; padding: 20px; }
-  h1 { margin-bottom: 10px; }
+  * { box-sizing: border-box; }
+  body { font-family: sans-serif; background: #222; color: #eee; text-align: center; margin: 0; padding: 12px; }
+  h1 { margin: 6px 0 10px; font-size: 22px; }
   #authBox { max-width: 300px; margin: 60px auto; background: #333; padding: 20px; border-radius: 8px; }
-  #authBox input { width: 90%; padding: 8px; margin: 6px 0; }
-  #authBox button { width: 95%; padding: 8px; margin-top: 8px; cursor: pointer; }
+  #authBox input { width: 90%; padding: 10px; margin: 6px 0; font-size: 16px; }
+  #authBox button { width: 95%; padding: 10px; margin-top: 8px; cursor: pointer; font-size: 15px; }
   #authError { color: #f66; min-height: 20px; }
   #appBox { display: none; }
-  #topBar { display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 10px; }
-  canvas#wheel { border-radius: 50%; cursor: crosshair; }
-  canvas#board { background: #fff; border: 2px solid #555; cursor: crosshair; touch-action: none; }
-  #swatch { width: 30px; height: 30px; border: 2px solid #eee; display: inline-block; vertical-align: middle; }
-  button { border: none; border-radius: 4px; padding: 8px 14px; background: #4a90d9; color: #fff; }
+  #topBar { display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  #toolBar { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  canvas#wheel { border-radius: 50%; cursor: crosshair; touch-action: none; }
+  #boardWrap {
+    width: 100%; max-width: 1000px; aspect-ratio: 1000 / 650;
+    margin: 0 auto; overflow: hidden; position: relative;
+    touch-action: none; border: 2px solid #555; background: #fff; border-radius: 4px;
+  }
+  canvas#board { width: 100%; height: 100%; display: block; touch-action: none; }
+  #swatch { width: 28px; height: 28px; border: 2px solid #eee; display: inline-block; vertical-align: middle; border-radius: 4px; }
+  button { border: none; border-radius: 6px; padding: 9px 14px; background: #4a90d9; color: #fff; font-size: 14px; cursor: pointer; min-height: 40px; }
   button:hover { background: #3a7bc0; }
+  button.tool { min-width: 44px; }
+  button.active { background: #e6a817; color: #222; font-weight: bold; }
   #status { font-size: 12px; color: #9c9; height: 16px; }
+  label { font-size: 13px; }
+  @media (max-width: 480px) {
+    h1 { font-size: 18px; }
+    button { padding: 8px 10px; font-size: 13px; }
+    canvas#wheel { width: 90px; height: 90px; }
+  }
 </style>
 </head>
 <body>
 
-<h1>ColorBoard</h1>
+<h1>AERO</h1>
 
 <div id="authBox">
   <div id="authError"></div>
-  <input id="username" placeholder="Username" autocomplete="username">
-  <input id="password" type="password" placeholder="Password" autocomplete="current-password">
-  <button onclick="login()">Log In</button>
-  <button onclick="register()">Register</button>
+  <input id="username" placeholder="Имя пользователя" autocomplete="username">
+  <input id="password" type="password" placeholder="Пароль" autocomplete="current-password">
+  <button onclick="login()">Войти</button>
+  <button onclick="register()">Зарегистрироваться</button>
 </div>
 
 <div id="appBox">
   <div id="topBar">
-    <span>Logged in as <b id="who"></b></span>
+    <span>Вы вошли как <b id="who"></b></span>
     <canvas id="wheel" width="120" height="120"></canvas>
-    <span>Color: <span id="swatch"></span></span>
-    <span>Brush: <input id="brush" type="range" min="1" max="50" value="6"></span>
-    <button onclick="clearBoard()">Clear</button>
-    <button onclick="logout()">Log Out</button>
+    <span>Цвет: <span id="swatch"></span></span>
+    <span><label>Кисть: <input id="brush" type="range" min="1" max="50" value="6"></label></span>
+    <button onclick="logout()">Выйти</button>
+  </div>
+  <div id="toolBar">
+    <button class="tool active" id="tool-pen" onclick="selectTool('pen')" title="Кисть">🖊 Кисть</button>
+    <button class="tool" id="tool-eraser" onclick="selectTool('eraser')" title="Ластик">🧽 Ластик</button>
+    <button class="tool" id="tool-move" onclick="selectTool('move')" title="Перемещение">✋ Курсор</button>
+    <button onclick="zoomOut()" title="Уменьшить">➖</button>
+    <button onclick="zoomIn()" title="Увеличить">➕</button>
+    <button onclick="zoomReset()" title="Сбросить масштаб">⟳ 100%</button>
+    <button onclick="clearBoard()">🗑 Очистить</button>
   </div>
   <div id="status"></div>
-  <canvas id="board" width="900" height="550"></canvas>
+  <div id="boardWrap">
+    <canvas id="board" width="1000" height="650"></canvas>
+  </div>
 </div>
 
 <script>
 let currentColor = '#000000';
 let brushSize = 6;
-let drawing = false;
-let lastX = 0, lastY = 0;
+let tool = 'pen'; // 'pen' | 'eraser' | 'move'
 
 const board = document.getElementById('board');
+const boardWrap = document.getElementById('boardWrap');
 const ctx = board.getContext('2d');
 const wheel = document.getElementById('wheel');
 const wctx = wheel.getContext('2d');
 const statusEl = document.getElementById('status');
 
-// ---------- auth ----------
+// ---------- авторизация ----------
 async function api(url, opts) {
   const res = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
   return res.json().then(data => ({ ok: res.ok, data }));
@@ -86,7 +112,7 @@ async function logout() {
 }
 
 function showAuthError(msg) {
-  document.getElementById('authError').textContent = msg || 'Error';
+  document.getElementById('authError').textContent = msg || 'Ошибка';
 }
 
 async function enterApp(username) {
@@ -101,7 +127,7 @@ async function checkSession() {
   if (data.loggedIn) enterApp(data.username);
 }
 
-// ---------- drawing persistence ----------
+// ---------- сохранение рисунка ----------
 async function loadDrawing() {
   const { data } = await api('/api/drawing');
   ctx.clearRect(0, 0, board.width, board.height);
@@ -115,74 +141,150 @@ async function loadDrawing() {
 }
 
 async function saveDrawing() {
-  statusEl.textContent = 'Saving...';
+  statusEl.textContent = 'Сохранение...';
   const image = board.toDataURL('image/png');
   const { ok } = await api('/api/drawing', { method: 'POST', body: JSON.stringify({ image }) });
-  statusEl.textContent = ok ? 'Saved' : 'Save failed';
+  statusEl.textContent = ok ? 'Сохранено' : 'Ошибка сохранения';
   setTimeout(() => statusEl.textContent = '', 1200);
 }
 
 function clearBoard() {
+  ctx.clearRect(0, 0, board.width, board.height);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, board.width, board.height);
   saveDrawing();
 }
 
-// ---------- canvas drawing ----------
-function getPos(e) {
-  const rect = board.getBoundingClientRect();
-  const p = e.touches ? e.touches[0] : e;
-  return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+// ---------- инструменты ----------
+function selectTool(t) {
+  tool = t;
+  document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
+  document.getElementById('tool-' + t).classList.add('active');
+  boardWrap.style.cursor = t === 'move' ? 'grab' : 'crosshair';
 }
 
-function startDraw(e) {
-  drawing = true;
-  const p = getPos(e);
-  lastX = p.x; lastY = p.y;
+// ---------- масштаб и перемещение (панорама) ----------
+let zoom = 1, panX = 0, panY = 0;
+
+function updateTransform() {
+  board.style.transformOrigin = '0 0';
+  board.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
 }
 
-function moveDraw(e) {
-  if (!drawing) return;
+function zoomIn() { zoom = Math.min(4, zoom * 1.25); updateTransform(); }
+function zoomOut() { zoom = Math.max(0.5, zoom / 1.25); updateTransform(); }
+function zoomReset() { zoom = 1; panX = 0; panY = 0; updateTransform(); }
+
+boardWrap.addEventListener('wheel', e => {
   e.preventDefault();
-  const p = getPos(e);
+  zoom = Math.max(0.5, Math.min(4, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+  updateTransform();
+}, { passive: false });
+
+// ---------- рисование / ластик / панорама через Pointer Events ----------
+const activePointers = new Map();
+let isDrawing = false, isPanning = false, isPinching = false;
+let lastX = 0, lastY = 0;
+let panStart = { x: 0, y: 0 }, panOrigin = { x: 0, y: 0 };
+let pinchStartDist = 0, pinchStartZoom = 1;
+
+function getCanvasPos(clientX, clientY) {
+  const rect = board.getBoundingClientRect();
+  const scaleX = board.width / rect.width;
+  const scaleY = board.height / rect.height;
+  return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+}
+
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+function drawSegment(x1, y1, x2, y2) {
+  ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
   ctx.strokeStyle = currentColor;
   ctx.lineWidth = brushSize;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(lastX, lastY);
-  ctx.lineTo(p.x, p.y);
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
   ctx.stroke();
-  lastX = p.x; lastY = p.y;
 }
 
-function endDraw() {
-  if (!drawing) return;
-  drawing = false;
-  saveDrawing();
-}
+board.addEventListener('pointerdown', e => {
+  board.setPointerCapture(e.pointerId);
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-board.addEventListener('mousedown', startDraw);
-board.addEventListener('mousemove', moveDraw);
-window.addEventListener('mouseup', endDraw);
-board.addEventListener('touchstart', startDraw);
-board.addEventListener('touchmove', moveDraw);
-board.addEventListener('touchend', endDraw);
+  if (activePointers.size === 2) {
+    isDrawing = false;
+    isPanning = false;
+    isPinching = true;
+    const pts = [...activePointers.values()];
+    pinchStartDist = dist(pts[0], pts[1]);
+    pinchStartZoom = zoom;
+  } else if (activePointers.size === 1) {
+    if (tool === 'move') {
+      isPanning = true;
+      boardWrap.style.cursor = 'grabbing';
+      panStart = { x: e.clientX, y: e.clientY };
+      panOrigin = { x: panX, y: panY };
+    } else {
+      isDrawing = true;
+      const p = getCanvasPos(e.clientX, e.clientY);
+      lastX = p.x; lastY = p.y;
+      drawSegment(p.x, p.y, p.x + 0.01, p.y + 0.01); // draw a dot on tap
+    }
+  }
+});
+
+board.addEventListener('pointermove', e => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (isPinching && activePointers.size === 2) {
+    const pts = [...activePointers.values()];
+    const d = dist(pts[0], pts[1]);
+    zoom = Math.max(0.5, Math.min(4, pinchStartZoom * (d / pinchStartDist)));
+    updateTransform();
+    return;
+  }
+  if (isPanning) {
+    panX = panOrigin.x + (e.clientX - panStart.x);
+    panY = panOrigin.y + (e.clientY - panStart.y);
+    updateTransform();
+    return;
+  }
+  if (isDrawing) {
+    const p = getCanvasPos(e.clientX, e.clientY);
+    drawSegment(lastX, lastY, p.x, p.y);
+    lastX = p.x; lastY = p.y;
+  }
+});
+
+function endPointer(e) {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) isPinching = false;
+  if (activePointers.size === 0) {
+    if (isDrawing) { isDrawing = false; saveDrawing(); }
+    if (isPanning) { isPanning = false; boardWrap.style.cursor = tool === 'move' ? 'grab' : 'crosshair'; }
+  }
+}
+board.addEventListener('pointerup', endPointer);
+board.addEventListener('pointercancel', endPointer);
+board.addEventListener('pointerleave', e => { if (activePointers.size === 0) return; });
 
 document.getElementById('brush').addEventListener('input', e => brushSize = Number(e.target.value));
 
-// ---------- color wheel ----------
+// ---------- цветовое колесо ----------
 function drawWheel() {
   const r = wheel.width / 2;
   const img = wctx.createImageData(wheel.width, wheel.height);
   for (let y = 0; y < wheel.height; y++) {
     for (let x = 0; x < wheel.width; x++) {
       const dx = x - r, dy = y - r;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      const distC = Math.sqrt(dx * dx + dy * dy);
       const idx = (y * wheel.width + x) * 4;
-      if (dist <= r) {
+      if (distC <= r) {
         let angle = Math.atan2(dy, dx) * 180 / Math.PI;
         if (angle < 0) angle += 360;
-        const sat = Math.min(dist / r, 1);
+        const sat = Math.min(distC / r, 1);
         const [rr, gg, bb] = hsvToRgb(angle, sat, 1);
         img.data[idx] = rr; img.data[idx+1] = gg; img.data[idx+2] = bb; img.data[idx+3] = 255;
       }
@@ -205,18 +307,19 @@ function hsvToRgb(h, s, v) {
   return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
 }
 
-function pickColor(e) {
+function pickColor(clientX, clientY) {
   const rect = wheel.getBoundingClientRect();
-  const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-  const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+  const x = (clientX - rect.left) * (wheel.width / rect.width);
+  const y = (clientY - rect.top) * (wheel.height / rect.height);
   const pixel = wctx.getImageData(x, y, 1, 1).data;
-  if (pixel[3] === 0) return; // outside wheel
+  if (pixel[3] === 0) return; // за пределами колеса
   currentColor = `rgb(${pixel[0]},${pixel[1]},${pixel[2]})`;
   document.getElementById('swatch').style.background = currentColor;
+  if (tool === 'eraser') selectTool('pen'); // picking a color implies you want to draw with it
 }
 
-wheel.addEventListener('mousedown', pickColor);
-wheel.addEventListener('touchstart', pickColor);
+wheel.addEventListener('pointerdown', e => pickColor(e.clientX, e.clientY));
+wheel.addEventListener('pointermove', e => { if (e.buttons === 1) pickColor(e.clientX, e.clientY); });
 
 drawWheel();
 document.getElementById('swatch').style.background = currentColor;
