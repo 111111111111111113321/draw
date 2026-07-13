@@ -105,6 +105,7 @@ async function register() {
   const password = document.getElementById('password').value;
   const { ok, data } = await api('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) });
   if (!ok) return showAuthError(data.error);
+  myUserId = data.id;
   enterApp(username);
 }
 
@@ -113,6 +114,7 @@ async function login() {
   const password = document.getElementById('password').value;
   const { ok, data } = await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
   if (!ok) return showAuthError(data.error);
+  myUserId = data.id;
   enterApp(username);
 }
 
@@ -135,15 +137,53 @@ async function enterApp(username) {
   connectWS();
 }
 
+let myUserId = null;
+
 async function checkSession() {
   const { data } = await api('/api/me');
-  if (data.loggedIn) enterApp(data.username);
+  if (data.loggedIn) { myUserId = data.id; enterApp(data.username); }
 }
 
 // ---------- realtime общий бесконечный холст ----------
 let strokes = [];
 let ws = null;
 let reconnectTimer = null;
+
+// ---------- территория: кто первым нарисовал в ячейке, тот ей и владеет ----------
+const CELL_SIZE = 40;
+let cellOwners = new Map(); // "cx,cy" -> user_id
+
+function cellKey(cx, cy) { return cx + ',' + cy; }
+
+function cellsForSegment(x1, y1, x2, y2) {
+  const pts = [[x1, y1], [x2, y2], [(x1 + x2) / 2, (y1 + y2) / 2]];
+  const cells = new Set();
+  for (const [x, y] of pts) cells.add(cellKey(Math.floor(x / CELL_SIZE), Math.floor(y / CELL_SIZE)));
+  return [...cells];
+}
+
+function canClaim(cells, userId) {
+  for (const c of cells) {
+    const owner = cellOwners.get(c);
+    if (owner !== undefined && owner !== userId) return false;
+  }
+  return true;
+}
+
+function claimCells(cells, userId) {
+  for (const c of cells) if (!cellOwners.has(c)) cellOwners.set(c, userId);
+}
+
+let lastBlockedNotice = 0;
+function notifyBlocked() {
+  const now = Date.now();
+  if (now - lastBlockedNotice < 1200) return;
+  lastBlockedNotice = now;
+  const prevText = statusEl.textContent, prevClass = statusEl.className;
+  statusEl.textContent = '🚫 Здесь уже рисовал другой пользователь';
+  statusEl.className = 'offline';
+  setTimeout(() => { statusEl.textContent = prevText; statusEl.className = prevClass; }, 1200);
+}
 
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -158,13 +198,21 @@ function connectWS() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'history') {
       strokes = msg.strokes;
+      cellOwners = new Map();
+      for (const s of strokes) {
+        if (s.tool !== 'eraser') claimCells(cellsForSegment(s.x1, s.y1, s.x2, s.y2), s.user_id);
+      }
       redraw();
     } else if (msg.type === 'stroke') {
+      if (msg.tool !== 'eraser') claimCells(cellsForSegment(msg.x1, msg.y1, msg.x2, msg.y2), msg.user_id);
       strokes.push(msg);
       drawStroke(msg);
     } else if (msg.type === 'clear') {
       strokes = [];
+      cellOwners = new Map();
       redraw();
+    } else if (msg.type === 'rejected') {
+      notifyBlocked();
     }
   };
 
@@ -295,9 +343,14 @@ board.addEventListener('pointerdown', e => {
       const p = screenToWorld(e.clientX, e.clientY);
       lastX = p.x; lastY = p.y;
       const s = { x1: p.x, y1: p.y, x2: p.x + 0.01, y2: p.y + 0.01, color: currentColor, size: brushSize, tool };
-      strokes.push(s);
-      drawStroke(s);
-      sendStroke(s);
+      const cells = cellsForSegment(s.x1, s.y1, s.x2, s.y2);
+      if (!canClaim(cells, myUserId)) { notifyBlocked(); }
+      else {
+        if (tool !== 'eraser') claimCells(cells, myUserId);
+        strokes.push(s);
+        drawStroke(s);
+        sendStroke(s);
+      }
     }
   }
 });
@@ -326,6 +379,13 @@ board.addEventListener('pointermove', e => {
   if (isDrawing) {
     const p = screenToWorld(e.clientX, e.clientY);
     const s = { x1: lastX, y1: lastY, x2: p.x, y2: p.y, color: currentColor, size: brushSize, tool };
+    const cells = cellsForSegment(s.x1, s.y1, s.x2, s.y2);
+    if (!canClaim(cells, myUserId)) {
+      notifyBlocked();
+      lastX = p.x; lastY = p.y; // keep tracking the pointer so drawing resumes cleanly once past the blocked area
+      return;
+    }
+    if (tool !== 'eraser') claimCells(cells, myUserId);
     strokes.push(s);
     drawStroke(s);
     sendStroke(s);
